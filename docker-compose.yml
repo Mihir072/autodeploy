@@ -179,11 +179,11 @@ services:
       EUREKA_USER: ${EUREKA_USER:-admin}
       EUREKA_PASSWORD: ${EUREKA_PASSWORD:-admin}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
       retries: 5
-      start_period: 40s
+      start_period: 60s
 
   # ── Auth Service ─────────────────────────────────────────────────────────────
   auth-service:

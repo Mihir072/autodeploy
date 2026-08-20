@@ -1,0 +1,41 @@
+spring:
+  datasource:
+    # Overridden by @ServiceConnection from Testcontainers PostgreSQLContainer
+    url: jdbc:tc:postgresql:16-alpine:///auth_db_test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+# Disable Eureka registration in tests
+eureka:
+  client:
+    enabled: false
+
+# Test JWT secret (512-bit Base64)
+jwt:
+  secret: dGVzdC1zZWNyZXQtdGhhdC1pcy1sb25nLWVub3VnaC1mb3ItaG1hYy1zaGE1MTItc2lnbmluZy10ZXN0LW9ubHk=
+  expiration: 3600000
+  refresh-expiration: 86400000
+
+# Test encryption key (32-byte Base64)
+encryption:
+  key: dGVzdC10ZXN0LXRlc3QtdGVzdC10ZXN0LXRlc3Q=
+
+app:
+  frontend-redirect-url: http://localhost:3000
+  github:
+    webhook-secret: test-webhook-secret
+
+# Suppress auto-configure for OAuth2 in tests (no real GitHub credentials)
+spring.autoconfigure.exclude:
+  - org.springframework.boot.autoconfigure.security.oauth2.client.servlet.OAuth2ClientAutoConfiguration
+
+logging:
+  level:
+    com.autodeploy: DEBUG
+    org.flywaydb: INFO

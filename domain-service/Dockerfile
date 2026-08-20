@@ -4,8 +4,16 @@ WORKDIR /build
 
 COPY pom.xml ./
 COPY common/pom.xml ./common/
-COPY common/src ./common/src
+COPY discovery-service/pom.xml ./discovery-service/
+COPY api-gateway/pom.xml ./api-gateway/
+COPY auth-service/pom.xml ./auth-service/
+COPY project-service/pom.xml ./project-service/
+COPY build-service/pom.xml ./build-service/
+COPY deployment-service/pom.xml ./deployment-service/
 COPY domain-service/pom.xml ./domain-service/
+COPY notification-service/pom.xml ./notification-service/
+
+COPY common/src ./common/src
 COPY domain-service/src ./domain-service/src
 
 RUN ./domain-service/../mvnw -pl domain-service -am \

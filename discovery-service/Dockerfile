@@ -2,13 +2,18 @@
 FROM eclipse-temurin:21-jdk-alpine AS builder
 WORKDIR /build
 
-# Copy root POM and common module first (layer-cache friendly)
 COPY pom.xml ./
 COPY common/pom.xml ./common/
-COPY common/src ./common/src
-
-# Copy this service
 COPY discovery-service/pom.xml ./discovery-service/
+COPY api-gateway/pom.xml ./api-gateway/
+COPY auth-service/pom.xml ./auth-service/
+COPY project-service/pom.xml ./project-service/
+COPY build-service/pom.xml ./build-service/
+COPY deployment-service/pom.xml ./deployment-service/
+COPY domain-service/pom.xml ./domain-service/
+COPY notification-service/pom.xml ./notification-service/
+
+COPY common/src ./common/src
 COPY discovery-service/src ./discovery-service/src
 
 # Build only this service and its dependencies (skips other modules)
@@ -16,7 +21,7 @@ RUN ./discovery-service/../mvnw -pl discovery-service -am \
     -Dmaven.test.skip=true \
     --no-transfer-progress \
     package 2>/dev/null || \
-    (apt-get update -qq && apt-get install -y maven -qq && \
+    (apk add --no-cache maven && \
      mvn -pl discovery-service -am -Dmaven.test.skip=true --no-transfer-progress package)
 
 # ─── Stage 2: Runtime ───────────────────────────────────────────────────────
