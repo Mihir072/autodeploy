@@ -1,0 +1,393 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml — Full AutoDeploy Platform Stack
+#
+# Starts all infrastructure + all microservices.
+# For IDE development (run services locally), use docker-compose.infra.yml instead.
+#
+# Prerequisites:
+#   1. Copy .env.example to .env and fill in all required values
+#   2. Build all service JARs: mvn clean package -DskipTests
+#
+# Usage:
+#   docker-compose up -d                   # start everything
+#   docker-compose up -d postgres redis    # start only infra
+#   docker-compose logs -f auth-service    # tail service logs
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+networks:
+  autodeploy-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+  localstack-data:
+  traefik-certs:
+
+# ─── Common environment shared by all microservices ──────────────────────────
+x-service-common: &service-common
+  networks:
+    - autodeploy-net
+  restart: unless-stopped
+  env_file:
+    - .env
+  environment:
+    # Infrastructure
+    DB_HOST: postgres
+    DB_PORT: 5432
+    DB_USER: ${POSTGRES_USER:-postgres}
+    DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    REDIS_HOST: redis
+    REDIS_PORT: 6379
+    RABBITMQ_HOST: rabbitmq
+    RABBITMQ_PORT: 5672
+    RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+    RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+    EUREKA_URL: http://admin:admin@discovery-service:8761/eureka/
+    # AWS (LocalStack for local dev)
+    AWS_REGION: ${AWS_REGION:-us-east-1}
+    AWS_ACCESS_KEY_ID: test
+    AWS_SECRET_ACCESS_KEY: test
+    AWS_ENDPOINT_URL: http://localstack:4566
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: autodeploy-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - autodeploy-net
+
+  # ── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: autodeploy-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - autodeploy-net
+
+  # ── RabbitMQ ────────────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: autodeploy-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # Management UI: http://localhost:15672
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - autodeploy-net
+
+  # ── LocalStack (ECR, Route53, S3 mock) ─────────────────────────────────────
+  localstack:
+    image: localstack/localstack:3
+    container_name: autodeploy-localstack
+    restart: unless-stopped
+    environment:
+      SERVICES: ecr,route53,s3,iam,sts
+      DEBUG: 0
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - autodeploy-net
+
+  # ── Traefik v3 ──────────────────────────────────────────────────────────────
+  traefik:
+    image: traefik:v3.1
+    container_name: autodeploy-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=autodeploy-net"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/certs/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"     # Dashboard: http://localhost:8080/dashboard/
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certs:/certs
+    networks:
+      - autodeploy-net
+
+  # ── Discovery Service (Eureka) ───────────────────────────────────────────────
+  discovery-service:
+    build:
+      context: .
+      dockerfile: discovery-service/Dockerfile
+    container_name: autodeploy-discovery
+    <<: *service-common
+    ports:
+      - "8761:8761"
+    environment:
+      EUREKA_USER: ${EUREKA_USER:-admin}
+      EUREKA_PASSWORD: ${EUREKA_PASSWORD:-admin}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # ── Auth Service ─────────────────────────────────────────────────────────────
+  auth-service:
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    container_name: autodeploy-auth
+    <<: *service-common
+    ports:
+      - "8081:8081"
+    environment:
+      DB_NAME: auth_db
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Project Service ──────────────────────────────────────────────────────────
+  project-service:
+    build:
+      context: .
+      dockerfile: project-service/Dockerfile
+    container_name: autodeploy-project
+    <<: *service-common
+    ports:
+      - "8082:8082"
+    environment:
+      DB_NAME: project_db
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
+      WEBHOOK_BASE_URL: ${WEBHOOK_BASE_URL:-http://project-service:8082}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Build Service ────────────────────────────────────────────────────────────
+  build-service:
+    build:
+      context: .
+      dockerfile: build-service/Dockerfile
+    container_name: autodeploy-build
+    <<: *service-common
+    ports:
+      - "8083:8083"
+    environment:
+      DB_NAME: build_db
+      ECR_REGISTRY_URL: ${ECR_REGISTRY_URL}
+      ECR_REPOSITORY_NAME: ${ECR_REPOSITORY_NAME:-autodeploy}
+      BUILD_WORKSPACE_DIR: /tmp/autodeploy-builds
+    volumes:
+      - /tmp/autodeploy-builds:/tmp/autodeploy-builds
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Deployment Service ────────────────────────────────────────────────────────
+  deployment-service:
+    build:
+      context: .
+      dockerfile: deployment-service/Dockerfile
+    container_name: autodeploy-deployment
+    <<: *service-common
+    ports:
+      - "8084:8084"
+    environment:
+      DB_NAME: deployment_db
+      EC2_SSH_PRIVATE_KEY_BASE64: ${EC2_SSH_PRIVATE_KEY_BASE64}
+      EC2_SSH_USER: ${EC2_SSH_USER:-ec2-user}
+      ECR_REGISTRY_URL: ${ECR_REGISTRY_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Domain Service ────────────────────────────────────────────────────────────
+  domain-service:
+    build:
+      context: .
+      dockerfile: domain-service/Dockerfile
+    container_name: autodeploy-domain
+    <<: *service-common
+    ports:
+      - "8085:8085"
+    environment:
+      DB_NAME: domain_db
+      ROUTE53_HOSTED_ZONE_ID: ${ROUTE53_HOSTED_ZONE_ID}
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-autodeploy.example.com}
+      TRAEFIK_LB_IP: ${TRAEFIK_LB_IP:-127.0.0.1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Notification Service ───────────────────────────────────────────────────────
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    container_name: autodeploy-notification
+    <<: *service-common
+    ports:
+      - "8086:8086"
+    environment:
+      DB_NAME: notification_db
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-noreply@autodeploy.example.com}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── API Gateway ────────────────────────────────────────────────────────────────
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: autodeploy-gateway
+    <<: *service-common
+    ports:
+      - "9090:8080"   # External: 9090 (Traefik uses 8080 for its dashboard)
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+    depends_on:
+      redis:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api-gateway.rule=Host(`api.localhost`)"
+      - "traefik.http.routers.api-gateway.entrypoints=web"
+      - "traefik.http.services.api-gateway.loadbalancer.server.port=8080"

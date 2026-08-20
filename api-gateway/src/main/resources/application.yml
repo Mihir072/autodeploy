@@ -1,0 +1,134 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # password: ${REDIS_PASSWORD:}
+  cloud:
+    gateway:
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: ${ALLOWED_ORIGINS:http://localhost:3000}
+            allowedMethods: GET,POST,PUT,DELETE,PATCH,OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600
+      routes:
+        # ── Auth Service ──────────────────────────────────────────────────
+        - id: auth-service-oauth
+          uri: lb://auth-service
+          predicates:
+            - Path=/oauth2/**, /login/oauth2/**
+          # OAuth2 flow — no JWT check on these paths
+
+        - id: auth-service-api
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - StripPrefix=1
+
+        # ── Project Service ───────────────────────────────────────────────
+        - id: project-service
+          uri: lb://project-service
+          predicates:
+            - Path=/api/projects/**
+          filters:
+            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@userKeyResolver}"
+
+        # ── Build Service ─────────────────────────────────────────────────
+        - id: build-service
+          uri: lb://build-service
+          predicates:
+            - Path=/api/builds/**
+          filters:
+            - StripPrefix=1
+
+        # ── Deployment Service ────────────────────────────────────────────
+        - id: deployment-service
+          uri: lb://deployment-service
+          predicates:
+            - Path=/api/deployments/**
+          filters:
+            - StripPrefix=1
+
+        # ── Domain Service ────────────────────────────────────────────────
+        - id: domain-service
+          uri: lb://domain-service
+          predicates:
+            - Path=/api/domains/**
+          filters:
+            - StripPrefix=1
+
+        # ── Notification Service (WebSocket) ──────────────────────────────
+        - id: notification-service-ws
+          uri: lb:ws://notification-service
+          predicates:
+            - Path=/ws/**
+
+        - id: notification-service-api
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            - StripPrefix=1
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://admin:admin@localhost:8761/eureka/}
+    registry-fetch-interval-seconds: 5
+  instance:
+    prefer-ip-address: true
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: ${JWT_EXPIRATION_MS:86400000}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+
+# Paths that bypass JWT auth
+app:
+  security:
+    public-paths:
+      - /oauth2/**
+      - /login/oauth2/**
+      - /api/auth/refresh
+      - /actuator/**
+      - /webjars/**
+      - /v3/api-docs/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    com.autodeploy: DEBUG

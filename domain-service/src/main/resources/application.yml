@@ -1,0 +1,70 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: domain-service
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:domain_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://admin:admin@localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
+
+# ── AWS Route53 ────────────────────────────────────────────────────────────────
+aws:
+  region: ${AWS_REGION:us-east-1}
+  endpoint-override: ${AWS_ENDPOINT_URL:}
+  route53:
+    hosted-zone-id: ${ROUTE53_HOSTED_ZONE_ID}
+
+# ── Platform domain settings ──────────────────────────────────────────────────
+app:
+  platform-domain: ${PLATFORM_DOMAIN:autodeploy.example.com}
+  traefik-lb-ip: ${TRAEFIK_LB_IP:127.0.0.1}
+  domain:
+    verification-ttl-hours: 48   # How long a custom domain has to be verified
+    dns-propagation-check-interval-ms: 60000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.autodeploy: DEBUG
