@@ -28,6 +28,12 @@
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
         </dependency>
 
+        <!-- Spring Cloud LoadBalancer for lb:// routing resolution -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+
         <!-- Redis for rate limiting (reactive) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

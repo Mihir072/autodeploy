@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Bean;
  * <p>Registered via {@code META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports}</p>
  */
 @AutoConfiguration
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, EncryptionProperties.class})
 public class CommonAutoConfiguration {
 
     /**

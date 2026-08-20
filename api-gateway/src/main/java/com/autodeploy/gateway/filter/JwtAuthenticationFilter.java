@@ -46,7 +46,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
     private final JwtTokenProvider jwtTokenProvider;
     private final ObjectMapper objectMapper;
 
-    @Value("${app.security.public-paths}")
+    @Value("${app.security.public-paths:#{T(java.util.List).of('/oauth2/**','/login/oauth2/**','/api/auth/refresh','/actuator/**','/webjars/**','/v3/api-docs/**')}}")
     private List<String> publicPaths;
 
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();

@@ -1,5 +1,6 @@
 server:
   port: 8081
+  forward-headers-strategy: framework
 
 spring:
   application:
@@ -24,7 +25,7 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
+        format_sql: false
 
   # ── Flyway ──────────────────────────────────────────────────────────────────
   flyway:
@@ -41,7 +42,7 @@ spring:
             client-id: ${GITHUB_CLIENT_ID}
             client-secret: ${GITHUB_CLIENT_SECRET}
             scope: read:user,user:email,repo
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            redirect-uri: "${GITHUB_REDIRECT_URI:{baseUrl}/login/oauth2/code/{registrationId}}"
         provider:
           github:
             authorization-uri: https://github.com/login/oauth/authorize

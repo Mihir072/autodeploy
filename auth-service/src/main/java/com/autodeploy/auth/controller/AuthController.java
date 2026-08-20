@@ -96,4 +96,16 @@ public class AuthController {
         authService.logout(UUID.fromString(userId), refreshToken);
         return ResponseEntity.ok(ApiResponse.success("Logged out successfully"));
     }
+
+    /**
+     * Internal endpoint for downstream services (e.g., project-service) to retrieve
+     * the decrypted GitHub access token for a user.
+     */
+    @GetMapping("/internal/users/{userId}/github-token")
+    @Operation(summary = "Get decrypted GitHub token (internal)", hidden = true)
+    public ResponseEntity<ApiResponse<String>> getDecryptedGithubToken(
+            @PathVariable UUID userId) {
+        String token = authService.getDecryptedGithubToken(userId);
+        return ResponseEntity.ok(ApiResponse.success("Token retrieved", token));
+    }
 }
