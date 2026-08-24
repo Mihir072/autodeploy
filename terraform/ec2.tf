@@ -57,7 +57,7 @@ resource "aws_security_group" "ec2_sg" {
 
 # ── EC2 Instance ─────────────────────────────────────────────────────────────
 resource "aws_instance" "server" {
-  ami           = data.aws_ami.ubuntu.id
+  ami           = var.ami_id
   instance_type = var.ec2_instance_type
 
   subnet_id                   = aws_subnet.public[0].id

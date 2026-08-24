@@ -27,10 +27,16 @@ variable "domain_name" {
 }
 
 # ── EC2 Configuration ────────────────────────────────────────────────────────
-variable "ec2_instance_type" {
-  description = "EC2 instance type (t3.large or t3.xlarge recommended for running full stack)"
+variable "ami_id" {
+  description = "Ubuntu 24.04 LTS AMI ID for us-east-1"
   type        = string
-  default     = "t3.xlarge"
+  default     = "ami-04a81a99f5ec58529"
+}
+
+variable "ec2_instance_type" {
+  description = "EC2 instance type (Free Tier eligible: t3.micro or t2.micro)"
+  type        = string
+  default     = "t3.micro"
 }
 
 variable "ec2_root_volume_size" {
