@@ -53,6 +53,10 @@ jobs:
           )
           for pair in "${SERVICES[@]}"; do
             IFS=':' read -r dir name <<< "$pair"
+            echo "Ensuring ECR repository $name exists..."
+            aws ecr describe-repositories --repository-names "$name" --region ${{ env.AWS_REGION }} >/dev/null 2>&1 || \
+            aws ecr create-repository --repository-name "$name" --region ${{ env.AWS_REGION }} || true
+
             echo "Building $name..."
             docker build -t "$ECR_REGISTRY/$name:${{ env.IMAGE_TAG }}" \
                          -t "$ECR_REGISTRY/$name:latest" \
@@ -64,6 +68,10 @@ jobs:
       # Build and push frontend
       - name: Build & Push Frontend
         run: |
+          echo "Ensuring ECR repository autodeploy-frontend exists..."
+          aws ecr describe-repositories --repository-names "autodeploy-frontend" --region ${{ env.AWS_REGION }} >/dev/null 2>&1 || \
+          aws ecr create-repository --repository-name "autodeploy-frontend" --region ${{ env.AWS_REGION }} || true
+
           docker build -t "$ECR_REGISTRY/autodeploy-frontend:${{ env.IMAGE_TAG }}" \
                        -t "$ECR_REGISTRY/autodeploy-frontend:latest" \
                        --build-arg VITE_API_BASE_URL=https://api.autodeploy.space \
