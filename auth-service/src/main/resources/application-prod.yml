@@ -1,0 +1,36 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Auth Service — Production Profile
+# ─────────────────────────────────────────────────────────────────────────────
+
+spring:
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+  flyway:
+    baseline-on-migrate: false
+
+app:
+  frontend-redirect-url: ${FRONTEND_URL:https://autodeploy.space}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    com.autodeploy: INFO
+    org.springframework.security: WARN
+    root: WARN

@@ -1,0 +1,12 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# terraform.tfvars.example — Copy to terraform.tfvars and fill in real values
+# ─────────────────────────────────────────────────────────────────────────────
+
+aws_region        = "us-east-1"
+environment       = "prod"
+domain_name       = "autodeploy.space"
+ec2_instance_type = "t3.xlarge"   # 4 vCPU, 16GB RAM (ideal for full platform)
+ec2_root_volume_size = 60         # 60GB gp3 disk
+
+# Optional: your public SSH key (e.g., cat ~/.ssh/id_rsa.pub)
+# ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ..."

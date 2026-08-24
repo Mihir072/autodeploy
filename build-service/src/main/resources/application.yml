@@ -6,7 +6,7 @@ spring:
     name: build-service
 
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:build_db}
+    url: ${SPRING_DATASOURCE_URL:${DATABASE_URL:${POSTGRES_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/}${DB_NAME:build_db}}}
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -25,6 +25,7 @@ spring:
     locations: classpath:db/migration
 
   rabbitmq:
+    addresses: ${RABBITMQ_URL:amqp://${RABBITMQ_USER:guest}:${RABBITMQ_PASSWORD:guest}@${RABBITMQ_HOST:localhost}:${RABBITMQ_PORT:5672}}
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
@@ -39,6 +40,7 @@ spring:
 
   data:
     redis:
+      url: ${REDIS_URL:redis://${REDIS_HOST:localhost}:${REDIS_PORT:6379}}
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 

@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# API Gateway — Production Profile
+# Activated via: SPRING_PROFILES_ACTIVE=prod
+# ─────────────────────────────────────────────────────────────────────────────
+
+spring:
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: ${ALLOWED_ORIGINS:https://autodeploy.space,https://www.autodeploy.space}
+
+# Actuator — restrict in production
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+    gateway:
+      enabled: false
+
+# Disable Swagger in production
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    org.springframework.cloud.gateway: WARN
+    com.autodeploy: INFO
+    root: WARN

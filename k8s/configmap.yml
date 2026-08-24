@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ConfigMap — Non-secret configuration shared by all microservices
+# These values are injected as environment variables into each pod.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autodeploy-config
+  namespace: autodeploy
+  labels:
+    app.kubernetes.io/part-of: autodeploy-platform
+data:
+  # ── Spring ──────────────────────────────────────────────────────────────────
+  SPRING_PROFILES_ACTIVE: "prod"
+
+  # ── Database (RDS endpoint) ─────────────────────────────────────────────────
+  DB_HOST: "REPLACE_WITH_RDS_ENDPOINT"
+  DB_PORT: "5432"
+
+  # ── Redis (ElastiCache endpoint) ────────────────────────────────────────────
+  REDIS_HOST: "REPLACE_WITH_ELASTICACHE_ENDPOINT"
+  REDIS_PORT: "6379"
+
+  # ── RabbitMQ (AmazonMQ endpoint) ────────────────────────────────────────────
+  RABBITMQ_HOST: "REPLACE_WITH_AMAZONMQ_ENDPOINT"
+  RABBITMQ_PORT: "5672"
+
+  # ── Eureka (internal K8s DNS) ───────────────────────────────────────────────
+  EUREKA_URL: "http://admin:admin@discovery-service.autodeploy.svc.cluster.local:8761/eureka/"
+
+  # ── AWS ──────────────────────────────────────────────────────────────────────
+  AWS_REGION: "us-east-1"
+
+  # ── ECR ──────────────────────────────────────────────────────────────────────
+  ECR_REPOSITORY_NAME: "autodeploy"
+
+  # ── Frontend ─────────────────────────────────────────────────────────────────
+  FRONTEND_URL: "https://autodeploy.space"
+  ALLOWED_ORIGINS: "https://autodeploy.space,https://www.autodeploy.space"
+
+  # ── Platform Domain ─────────────────────────────────────────────────────────
+  PLATFORM_DOMAIN: "autodeploy.space"
+
+  # ── Build ───────────────────────────────────────────────────────────────────
+  BUILD_WORKSPACE_DIR: "/tmp/autodeploy-builds"
+  KANIKO_EXECUTOR_IMAGE: "gcr.io/kaniko-project/executor:latest"
+
+  # ── Mail ────────────────────────────────────────────────────────────────────
+  MAIL_HOST: "smtp.gmail.com"
+  MAIL_PORT: "587"
+  MAIL_ENABLED: "false"

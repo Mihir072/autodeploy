@@ -1,0 +1,33 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Domain Service — Production Profile
+# ─────────────────────────────────────────────────────────────────────────────
+
+spring:
+  jpa:
+    show-sql: false
+
+aws:
+  endpoint-override: ""
+
+app:
+  platform-domain: ${PLATFORM_DOMAIN:autodeploy.space}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    com.autodeploy: INFO
+    root: WARN

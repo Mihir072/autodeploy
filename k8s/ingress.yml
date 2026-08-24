@@ -1,0 +1,70 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# AWS ALB Ingress — Routes external traffic to Frontend + API Gateway
+#
+# Prerequisites:
+#   1. AWS Load Balancer Controller installed in the EKS cluster
+#   2. ACM certificate for autodeploy.space created via Terraform
+#   3. Route53 records pointing to the ALB
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: autodeploy-ingress
+  namespace: autodeploy
+  labels:
+    app.kubernetes.io/part-of: autodeploy-platform
+  annotations:
+    # AWS ALB Ingress Controller annotations
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: REPLACE_WITH_ACM_CERTIFICATE_ARN
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "10"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+    # Sticky sessions for WebSocket support
+    alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=3600
+    # WAF (optional — uncomment and add WAF ARN)
+    # alb.ingress.kubernetes.io/wafv2-acl-arn: REPLACE_WITH_WAF_ARN
+    # Group all rules under one ALB
+    alb.ingress.kubernetes.io/group.name: autodeploy
+    alb.ingress.kubernetes.io/group.order: "1"
+spec:
+  rules:
+    # ── Frontend (autodeploy.space + www) ───────────────────────────────────
+    - host: autodeploy.space
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+    - host: www.autodeploy.space
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+
+    # ── API Gateway (api.autodeploy.space) ──────────────────────────────────
+    - host: api.autodeploy.space
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080

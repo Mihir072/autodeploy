@@ -74,3 +74,18 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+terraform/tfplan
+terraform/policies/
+
+# ── Kubernetes ─────────────────────────────────────────────────────────────
+# Never commit real secrets — use kubectl create secret or a secrets manager
+k8s/secrets-*.yml
+!k8s/secrets.yml
+
+# ── Frontend production env ────────────────────────────────────────────────
+frontend/.env.local
+frontend/.env.*.local
+
+# ── Node modules ───────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/

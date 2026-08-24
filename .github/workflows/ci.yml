@@ -1,0 +1,132 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CI Pipeline — Build, Test, and Verify Docker Images
+# Triggers on: push to main, pull requests
+# ─────────────────────────────────────────────────────────────────────────────
+name: CI — Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  JAVA_VERSION: "21"
+  NODE_VERSION: "18"
+
+jobs:
+  # ── Backend: Maven Build & Test ────────────────────────────────────────────
+  backend-build:
+    name: Backend Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn clean package -B -q
+
+      - name: Run tests
+        run: mvn test -B
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: "**/target/surefire-reports/*.xml"
+
+  # ── Frontend: Build Verification ───────────────────────────────────────────
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+
+  # ── Docker: Build Verification ─────────────────────────────────────────────
+  docker-build:
+    name: Docker Build Verification
+    runs-on: ubuntu-latest
+    needs: [backend-build, frontend-build]
+    strategy:
+      matrix:
+        service:
+          - { name: discovery-service, dockerfile: discovery-service/Dockerfile }
+          - { name: api-gateway, dockerfile: api-gateway/Dockerfile }
+          - { name: auth-service, dockerfile: auth-service/Dockerfile }
+          - { name: project-service, dockerfile: project-service/Dockerfile }
+          - { name: build-service, dockerfile: build-service/Dockerfile }
+          - { name: deployment-service, dockerfile: deployment-service/Dockerfile }
+          - { name: domain-service, dockerfile: domain-service/Dockerfile }
+          - { name: notification-service, dockerfile: notification-service/Dockerfile }
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.service.dockerfile }}
+          push: false
+          tags: autodeploy/${{ matrix.service.name }}:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Frontend Docker Build ──────────────────────────────────────────────────
+  frontend-docker-build:
+    name: Frontend Docker Build
+    runs-on: ubuntu-latest
+    needs: [frontend-build]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend Docker image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          tags: autodeploy/frontend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

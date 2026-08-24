@@ -1,0 +1,76 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Build Service — Kubernetes Deployment + Service
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: build-service
+  namespace: autodeploy
+  labels:
+    app: build-service
+    app.kubernetes.io/part-of: autodeploy-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: build-service
+  template:
+    metadata:
+      labels:
+        app: build-service
+    spec:
+      containers:
+        - name: build-service
+          image: REPLACE_WITH_ECR_URL/autodeploy-build:latest
+          ports:
+            - containerPort: 8083
+          env:
+            - name: DB_NAME
+              value: build_db
+          envFrom:
+            - configMapRef:
+                name: autodeploy-config
+            - secretRef:
+                name: autodeploy-secrets
+          volumeMounts:
+            - name: build-workspace
+              mountPath: /tmp/autodeploy-builds
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8083
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8083
+            initialDelaySeconds: 90
+            periodSeconds: 30
+      volumes:
+        - name: build-workspace
+          emptyDir:
+            sizeLimit: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: build-service
+  namespace: autodeploy
+  labels:
+    app: build-service
+spec:
+  type: ClusterIP
+  selector:
+    app: build-service
+  ports:
+    - port: 8083
+      targetPort: 8083
+      protocol: TCP

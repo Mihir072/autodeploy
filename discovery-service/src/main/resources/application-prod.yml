@@ -1,0 +1,24 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Discovery Service (Eureka) — Production Profile
+# ─────────────────────────────────────────────────────────────────────────────
+
+eureka:
+  server:
+    enable-self-preservation: true
+    eviction-interval-timer-in-ms: 15000
+    renewal-percent-threshold: 0.85
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    com.netflix.eureka: WARN
+    com.netflix.discovery: WARN
+    root: WARN

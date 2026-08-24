@@ -6,6 +6,7 @@ spring:
     name: api-gateway
   data:
     redis:
+      url: ${REDIS_URL:redis://${REDIS_HOST:localhost}:${REDIS_PORT:6379}}
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       # password: ${REDIS_PASSWORD:}

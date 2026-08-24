@@ -6,7 +6,7 @@
 #   docker-compose -f docker-compose.infra.yml up -d
 # ─────────────────────────────────────────────────────────────────────────────
 
-version: "3.9"
+
 
 networks:
   autodeploy-net:

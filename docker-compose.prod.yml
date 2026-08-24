@@ -1,77 +1,85 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# docker-compose.yml — Full AutoDeploy Platform Stack
+# docker-compose.prod.yml — Production Stack for AWS EC2 Deployment
 #
-# Starts all infrastructure + all microservices.
-# For IDE development (run services locally), use docker-compose.infra.yml instead.
+# Runs all infrastructure (Postgres, Redis, RabbitMQ) + all 8 microservices
+# + Frontend + Traefik v3 edge reverse proxy with Let's Encrypt SSL.
 #
-# Prerequisites:
-#   1. Copy .env.example to .env and fill in all required values
-#   2. Build all service JARs: mvn clean package -DskipTests
-#
-# Usage:
-#   docker-compose up -d                   # start everything
-#   docker-compose up -d postgres redis    # start only infra
-#   docker-compose logs -f auth-service    # tail service logs
+# Costs: $0 for managed cloud DBs — everything runs self-hosted on your EC2 instance!
 # ─────────────────────────────────────────────────────────────────────────────
-
-
 
 networks:
   autodeploy-net:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
 
 volumes:
   postgres-data:
   redis-data:
   rabbitmq-data:
-  localstack-data:
   traefik-certs:
+  build-workspace:
 
-# ─── Common environment shared by all microservices ──────────────────────────
 x-service-common: &service-common
   networks:
     - autodeploy-net
-  restart: unless-stopped
+  restart: always
   env_file:
     - .env
   environment:
-    # Infrastructure Direct Connection Strings
+    SPRING_PROFILES_ACTIVE: prod
     POSTGRES_URL: ${POSTGRES_URL:-jdbc:postgresql://postgres:5432/}
     DATABASE_URL: ${DATABASE_URL:-jdbc:postgresql://postgres:5432/autodeploy}
     REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-    RABBITMQ_URL: ${RABBITMQ_URL:-amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672}
+    RABBITMQ_URL: ${RABBITMQ_URL:-amqp://${RABBITMQ_USER:-autodeploy}:${RABBITMQ_PASSWORD}@rabbitmq:5672}
     DB_HOST: postgres
     DB_PORT: 5432
     DB_USER: ${POSTGRES_USER:-postgres}
-    DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    DB_PASSWORD: ${POSTGRES_PASSWORD}
     REDIS_HOST: redis
     REDIS_PORT: 6379
     RABBITMQ_HOST: rabbitmq
     RABBITMQ_PORT: 5672
-    RABBITMQ_USER: ${RABBITMQ_USER:-guest}
-    RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
-    EUREKA_URL: http://admin:admin@discovery-service:8761/eureka/
-    # AWS (LocalStack for local dev)
+    RABBITMQ_USER: ${RABBITMQ_USER:-autodeploy}
+    RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    EUREKA_URL: http://${EUREKA_USER:-admin}:${EUREKA_PASSWORD:-admin}@discovery-service:8761/eureka/
     AWS_REGION: ${AWS_REGION:-us-east-1}
-    AWS_ACCESS_KEY_ID: test
-    AWS_SECRET_ACCESS_KEY: test
-    AWS_ENDPOINT_URL: http://localstack:4566
 
 services:
 
-  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  # ── Traefik v3 (Edge Reverse Proxy & Auto SSL) ───────────────────────────────
+  traefik:
+    image: traefik:v3.1
+    container_name: autodeploy-traefik
+    restart: always
+    command:
+      - "--api.dashboard=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=autodeploy-net"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@autodeploy.space}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/certs/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certs:/certs
+    networks:
+      - autodeploy-net
+
+  # ── PostgreSQL 16 ────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: autodeploy-postgres
-    restart: unless-stopped
+    restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
@@ -83,14 +91,12 @@ services:
     networks:
       - autodeploy-net
 
-  # ── Redis ───────────────────────────────────────────────────────────────────
+  # ── Redis 7 ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: autodeploy-redis
-    restart: unless-stopped
+    restart: always
     command: redis-server --save 60 1 --loglevel warning
-    ports:
-      - "6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -101,73 +107,21 @@ services:
     networks:
       - autodeploy-net
 
-  # ── RabbitMQ ────────────────────────────────────────────────────────────────
+  # ── RabbitMQ 3.13 ────────────────────────────────────────────────────────────
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     container_name: autodeploy-rabbitmq
-    restart: unless-stopped
+    restart: always
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
-    ports:
-      - "5672:5672"
-      - "15672:15672"   # Management UI: http://localhost:15672
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-autodeploy}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-    networks:
-      - autodeploy-net
-
-  # ── LocalStack (ECR, Route53, S3 mock) ─────────────────────────────────────
-  localstack:
-    image: localstack/localstack:3
-    container_name: autodeploy-localstack
-    restart: unless-stopped
-    environment:
-      SERVICES: ecr,route53,s3,iam,sts
-      DEBUG: 0
-      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
-    ports:
-      - "4566:4566"
-    volumes:
-      - localstack-data:/var/lib/localstack
-      - /var/run/docker.sock:/var/run/docker.sock
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-    networks:
-      - autodeploy-net
-
-  # ── Traefik v3 ──────────────────────────────────────────────────────────────
-  traefik:
-    image: traefik:v3.1
-    container_name: autodeploy-traefik
-    restart: unless-stopped
-    command:
-      - "--api.insecure=true"
-      - "--api.dashboard=true"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=autodeploy-net"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/certs/acme.json"
-      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
-      - "--log.level=INFO"
-    ports:
-      - "80:80"
-      - "443:443"
-      - "8080:8080"     # Dashboard: http://localhost:8080/dashboard/
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik-certs:/certs
     networks:
       - autodeploy-net
 
@@ -176,63 +130,57 @@ services:
     build:
       context: .
       dockerfile: discovery-service/Dockerfile
+    image: ${ECR_REGISTRY_URL:-autodeploy}/autodeploy-discovery:latest
     container_name: autodeploy-discovery
     <<: *service-common
-    ports:
-      - "8761:8761"
     environment:
+      SPRING_PROFILES_ACTIVE: prod
       EUREKA_USER: ${EUREKA_USER:-admin}
       EUREKA_PASSWORD: ${EUREKA_PASSWORD:-admin}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
-      interval: 10s
+      interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 60s
+      start_period: 40s
 
   # ── Auth Service ─────────────────────────────────────────────────────────────
   auth-service:
     build:
       context: .
       dockerfile: auth-service/Dockerfile
+    image: ${ECR_REGISTRY_URL:-autodeploy}/autodeploy-auth:latest
     container_name: autodeploy-auth
     <<: *service-common
-    ports:
-      - "8081:8081"
     environment:
+      SPRING_PROFILES_ACTIVE: prod
       DB_NAME: auth_db
       JWT_SECRET: ${JWT_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-https://autodeploy.space}
     depends_on:
       postgres:
         condition: service_healthy
       discovery-service:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
 
   # ── Project Service ──────────────────────────────────────────────────────────
   project-service:
     build:
       context: .
       dockerfile: project-service/Dockerfile
+    image: ${ECR_REGISTRY_URL:-autodeploy}/autodeploy-project:latest
     container_name: autodeploy-project
     <<: *service-common
-    ports:
-      - "8082:8082"
     environment:
+      SPRING_PROFILES_ACTIVE: prod
       DB_NAME: project_db
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
-      WEBHOOK_BASE_URL: ${WEBHOOK_BASE_URL:-http://project-service:8082}
+      WEBHOOK_BASE_URL: ${WEBHOOK_BASE_URL:-https://api.autodeploy.space}
     depends_on:
       postgres:
         condition: service_healthy
@@ -240,29 +188,24 @@ services:
         condition: service_healthy
       discovery-service:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
 
   # ── Build Service ────────────────────────────────────────────────────────────
   build-service:
     build:
       context: .
       dockerfile: build-service/Dockerfile
+    image: ${ECR_REGISTRY_URL:-autodeploy}/autodeploy-build:latest
     container_name: autodeploy-build
     <<: *service-common
-    ports:
-      - "8083:8083"
     environment:
+      SPRING_PROFILES_ACTIVE: prod
       DB_NAME: build_db
       ECR_REGISTRY_URL: ${ECR_REGISTRY_URL}
       ECR_REPOSITORY_NAME: ${ECR_REPOSITORY_NAME:-autodeploy}
       BUILD_WORKSPACE_DIR: /tmp/autodeploy-builds
     volumes:
-      - /tmp/autodeploy-builds:/tmp/autodeploy-builds
+      - build-workspace:/tmp/autodeploy-builds
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
@@ -272,23 +215,17 @@ services:
         condition: service_healthy
       discovery-service:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
 
   # ── Deployment Service ────────────────────────────────────────────────────────
   deployment-service:
     build:
       context: .
       dockerfile: deployment-service/Dockerfile
+    image: ${ECR_REGISTRY_URL:-autodeploy}/autodeploy-deployment:latest
     container_name: autodeploy-deployment
     <<: *service-common
-    ports:
-      - "8084:8084"
     environment:
+      SPRING_PROFILES_ACTIVE: prod
       DB_NAME: deployment_db
       EC2_SSH_PRIVATE_KEY_BASE64: ${EC2_SSH_PRIVATE_KEY_BASE64}
       EC2_SSH_USER: ${EC2_SSH_USER:-ec2-user}
@@ -300,27 +237,21 @@ services:
         condition: service_healthy
       discovery-service:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
 
   # ── Domain Service ────────────────────────────────────────────────────────────
   domain-service:
     build:
       context: .
       dockerfile: domain-service/Dockerfile
+    image: ${ECR_REGISTRY_URL:-autodeploy}/autodeploy-domain:latest
     container_name: autodeploy-domain
     <<: *service-common
-    ports:
-      - "8085:8085"
     environment:
+      SPRING_PROFILES_ACTIVE: prod
       DB_NAME: domain_db
       ROUTE53_HOSTED_ZONE_ID: ${ROUTE53_HOSTED_ZONE_ID}
-      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-autodeploy.example.com}
-      TRAEFIK_LB_IP: ${TRAEFIK_LB_IP:-127.0.0.1}
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-autodeploy.space}
+      TRAEFIK_LB_IP: ${TRAEFIK_LB_IP}
     depends_on:
       postgres:
         condition: service_healthy
@@ -328,29 +259,23 @@ services:
         condition: service_healthy
       discovery-service:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
 
   # ── Notification Service ───────────────────────────────────────────────────────
   notification-service:
     build:
       context: .
       dockerfile: notification-service/Dockerfile
+    image: ${ECR_REGISTRY_URL:-autodeploy}/autodeploy-notification:latest
     container_name: autodeploy-notification
     <<: *service-common
-    ports:
-      - "8086:8086"
     environment:
+      SPRING_PROFILES_ACTIVE: prod
       DB_NAME: notification_db
       MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
       MAIL_PORT: ${MAIL_PORT:-587}
       MAIL_USERNAME: ${MAIL_USERNAME:-}
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
-      MAIL_FROM: ${MAIL_FROM:-noreply@autodeploy.example.com}
+      MAIL_FROM: ${MAIL_FROM:-noreply@autodeploy.space}
       MAIL_ENABLED: ${MAIL_ENABLED:-false}
     depends_on:
       postgres:
@@ -361,38 +286,48 @@ services:
         condition: service_healthy
       discovery-service:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8086/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
 
   # ── API Gateway ────────────────────────────────────────────────────────────────
   api-gateway:
     build:
       context: .
       dockerfile: api-gateway/Dockerfile
+    image: ${ECR_REGISTRY_URL:-autodeploy}/autodeploy-gateway:latest
     container_name: autodeploy-gateway
     <<: *service-common
-    ports:
-      - "9090:8080"   # External: 9090 (Traefik uses 8080 for its dashboard)
     environment:
+      SPRING_PROFILES_ACTIVE: prod
       JWT_SECRET: ${JWT_SECRET}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://autodeploy.space,https://www.autodeploy.space}
     depends_on:
       redis:
         condition: service_healthy
       discovery-service:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api-gateway.rule=Host(`api.localhost`)"
-      - "traefik.http.routers.api-gateway.entrypoints=web"
+      - "traefik.http.routers.api-gateway.rule=Host(`api.autodeploy.space`)"
+      - "traefik.http.routers.api-gateway.entrypoints=websecure"
+      - "traefik.http.routers.api-gateway.tls.certresolver=letsencrypt"
       - "traefik.http.services.api-gateway.loadbalancer.server.port=8080"
+
+  # ── Frontend (React + Nginx) ──────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: https://api.autodeploy.space
+        VITE_WS_URL: wss://api.autodeploy.space
+        VITE_GITHUB_AUTH_URL: https://api.autodeploy.space/oauth2/authorization/github
+    image: ${ECR_REGISTRY_URL:-autodeploy}/autodeploy-frontend:latest
+    container_name: autodeploy-frontend
+    restart: always
+    networks:
+      - autodeploy-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`autodeploy.space`) || Host(`www.autodeploy.space`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
