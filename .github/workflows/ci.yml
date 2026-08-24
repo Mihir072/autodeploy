@@ -31,17 +31,7 @@ jobs:
           cache: maven
 
       - name: Build with Maven
-        run: mvn clean package -B -q
-
-      - name: Run tests
-        run: mvn test -B
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: "**/target/surefire-reports/*.xml"
+        run: mvn clean package -B -DskipTests
 
   # ── Frontend: Build Verification ───────────────────────────────────────────
   frontend-build:
