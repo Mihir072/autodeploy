@@ -78,9 +78,16 @@ resource "aws_instance" "server" {
               #!/bin/bash
               set -e
 
+              # Enable 4GB Swap Space for memory stability
+              fallocate -l 4G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=4096
+              chmod 600 /swapfile
+              mkswap /swapfile
+              swapon /swapfile
+              echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
               # Update & install dependencies
               apt-get update -y
-              apt-get install -y ca-certificates curl gnupg lsb-release git jq
+              apt-get install -y ca-certificates curl gnupg lsb-release git jq unzip
 
               # Add Docker's official GPG key
               install -m 0755 -d /etc/apt/keyrings
@@ -93,6 +100,11 @@ resource "aws_instance" "server" {
               # Install Docker Engine & Docker Compose V2
               apt-get update -y
               apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+              # Install AWS CLI v2
+              curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+              unzip -q awscliv2.zip
+              ./aws/install
 
               # Enable & start Docker
               systemctl enable docker

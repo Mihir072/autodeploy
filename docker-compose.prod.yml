@@ -25,6 +25,7 @@ x-service-common: &service-common
   env_file:
     - .env
   environment:
+    JAVA_TOOL_OPTIONS: "-Xms32m -Xmx128m -XX:+UseG1GC"
     SPRING_PROFILES_ACTIVE: prod
     POSTGRES_URL: ${POSTGRES_URL:-jdbc:postgresql://postgres:5432/}
     DATABASE_URL: ${DATABASE_URL:-jdbc:postgresql://postgres:5432/autodeploy}
@@ -63,6 +64,9 @@ services:
       - "--certificatesresolvers.letsencrypt.acme.storage=/certs/acme.json"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
       - "--log.level=INFO"
+    environment:
+      - DOCKER_API_VERSION=1.40
+      - TRAEFIK_PROVIDERS_DOCKER_APIVERSION=1.40
     ports:
       - "80:80"
       - "443:443"
