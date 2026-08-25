@@ -327,6 +327,8 @@ services:
     image: ${ECR_REGISTRY_URL:-autodeploy}/autodeploy-frontend:latest
     container_name: autodeploy-frontend
     restart: always
+    healthcheck:
+      disable: true
     networks:
       - autodeploy-net
     labels:
