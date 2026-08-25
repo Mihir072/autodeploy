@@ -54,6 +54,7 @@ services:
     command:
       - "--api.dashboard=false"
       - "--providers.docker=true"
+      - "--providers.docker.apiVersion=1.40"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=autodeploy-net"
       - "--entrypoints.web.address=:80"
